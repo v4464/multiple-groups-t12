@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Group Chat Application</title>
+  <link rel="stylesheet" href="/css/chatapp.css">
+</head>
+<body>
+  <div class="container">
+    <div class="sidebar">
+      <div class="user-info">
+        <h2>User Info</h2>
+        <div id="user-info-display">
+          <!-- Display user info here -->
+        </div>
+      </div>
+      <div class="groups">
+        <h2>Groups</h2>
+        <ul id="group-list">
+          <!-- Group list will be dynamically populated -->
+        </ul>
+        <button id="create-group-btn">Create New Group</button>
+      </div>
+    </div>
+    <div class="chat-container">
+      <div class="chat-header">
+        <h2 id="current-group-name">Select a Group</h2>
+        <button id="leave-group-btn">Leave Group</button>
+      </div>
+      <div class="chat-messages" id="chat-messages">
+        <!-- Chat messages will be dynamically populated -->
+      </div>
+      <div class="message-input">
+        <textarea id="message-input" placeholder="Type your message..."></textarea>
+        <button id="send-message-btn">Send</button>
+      </div>
+    </div>
+  </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const groupList = document.getElementById('group-list');
+            const currentGroupName = document.getElementById('current-group-name');
+            const chatMessages = document.getElementById('chat-messages');
+            const messageInput = document.getElementById('message-input');
+            const sendMessageBtn = document.getElementById('send-message-btn');
+            const createGroupBtn = document.getElementById('create-group-btn');
+            const leaveGroupBtn = document.getElementById('leave-group-btn');
+            const userInfoDisplay = document.getElementById('user-info-display');
+
+            let currentGroupId = null;
+            let userId = null; // Will be set after fetching user info
+            const token = localStorage.getItem('token'); // Assuming token is stored in localStorage after login
+
+            // Fetch user info and display it
+            function fetchUserInfo() {
+                axios.get('http://localhost:5000/user', {
+                    headers: { Authorization: token }
+                })
+                .then(response => {
+                    const user = response.data;
+                    userId = user.id;
+                    userInfoDisplay.innerHTML = `<strong>${user.username}</strong><br>${user.email}`;
+                    fetchGroups();
+                })
+                .catch(error => console.error('Error fetching user info:', error));
+            }
+
+            // Fetch groups and display them in the sidebar
+            function fetchGroups() {
+                axios.get('http://localhost:5000/group/user', {
+                    headers: { Authorization: token }
+                })
+                .then(response => {
+                    const groups = response.data;
+                    groupList.innerHTML = '';
+                    groups.forEach(group => {
+                        const li = document.createElement('li');
+                        li.textContent = group.name;
+                        li.dataset.groupId = group.id;
+                        li.addEventListener('click', () => selectGroup(group.id, group.name));
+                        groupList.appendChild(li);
+                    });
+                })
+                .catch(error => console.error('Error fetching groups:', error));
+            }
+
+            // Fetch messages for the selected group
+            function fetchMessages(groupId) {
+                axios.get(`http://localhost:5000/chat/message/${groupId}`, {
+                    headers: { Authorization: token }
+                })
+                .then(response => {
+                    const messages = response.data;
+                    chatMessages.innerHTML = '';
+                    messages.forEach(message => {
+                        const div = document.createElement('div');
+                        div.classList.add('message');
+                        div.innerHTML = `<strong>${message.user_id}:</strong> ${message.content}`;
+                        chatMessages.appendChild(div);
+                    });
+                    // Scroll to bottom of messages
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                })
+                .catch(error => console.error('Error fetching messages:', error));
+            }
+
+            // Select a group from the sidebar
+            function selectGroup(groupId, groupName) {
+                currentGroupId = groupId;
+                currentGroupName.textContent = groupName;
+                fetchMessages(groupId);
+            }
+
+            // Send a message to the current group
+            function sendMessage() {
+                const messageText = messageInput.value.trim();
+                if (messageText === '') return;
+
+                const body = {
+                    group_id: currentGroupId,
+                    content: messageText
+                };
+
+                axios.post('http://localhost:5000/chat/message', body, {
+                    headers: { Authorization: token }
+                })
+                .then(() => {
+                    messageInput.value = '';
+                    fetchMessages(currentGroupId);
+                })
+                .catch(error => console.error('Error sending message:', error));
+            }
+
+            // Event listeners
+            sendMessageBtn.addEventListener('click', sendMessage);
+            createGroupBtn.addEventListener('click', () => {
+                const groupName = prompt('Enter group name:');
+                if (groupName) {
+                    createGroup(groupName);
+                }
+            });
+
+            leaveGroupBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to leave this group?')) {
+                    leaveGroup();
+                }
+            });
+
+            // Initial fetch of user info
+            fetchUserInfo();
+
+            // Function to create a new group
+            function createGroup(groupName) {
+                const userEmails = prompt('Enter member emails (comma-separated):').split(',').map(email => email.trim());
+                const body = {
+                    name: groupName,
+                    userEmails: userEmails
+                };
+
+                axios.post('http://localhost:5000/group/create', body, {
+                    headers: { Authorization: token }
+                })
+                .then(() => {
+                    fetchGroups();
+                })
+                .catch(error => console.error('Error creating group:', error));
+            }
+
+            // Function to leave the current group
+            function leaveGroup() {
+                axios.delete(`http://localhost:5000/group-member/leave/${currentGroupId}/${userId}`, {
+                    headers: { Authorization: token }
+                })
+                .then(() => {
+                    currentGroupId = null;
+                    currentGroupName.textContent = 'Select a Group';
+                    chatMessages.innerHTML = '';
+                    fetchGroups();
+                })
+                .catch(error => console.error('Error leaving group:', error));
+            }
+        });
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.7.2/axios.min.js" integrity="sha512-JSCFHhKDilTRRXe9ak/FJ28dcpOJxzQaCd3Xg8MyF6XFjODhy/YMCM8HW0TFDckNHWUewW+kfvhin43hKtJxAw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</body>
+</html>
